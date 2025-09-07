@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from . import crud, models, schemas, auth,database # Import everything
 from .database import SessionLocal, engine
@@ -8,13 +8,31 @@ from datetime import timedelta
 from typing import List, Optional # Make sure Optional is imported at the top
 from pydantic import BaseModel
 from . import chatbot
+from . import notifications
+from fastapi.middleware.cors import CORSMiddleware
 
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+# Add CORSMiddleware to your imports
 
+# --- ADD THIS CORS MIDDLEWARE CONFIGURATION ---
+origins = [
+    "http://localhost",
+    "http://localhost:3000",
+    "http://localhost:5173", # The default port for Vite React apps
+]
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"], # Allows all methods
+    allow_headers=["*"], # Allows all headers
+)
+# ---------------------------------------------
 
+# ... (the rest of your main.py file with all your endpoints) ...
 @app.get("/")
 def read_root():
     return {"Project": "SkillSetu API - Phase 1"}
@@ -98,26 +116,27 @@ def update_my_skills(
     user = crud.update_user_skills(db, user=current_user, skill_ids=skills_update.skill_ids)
     return user
 
-# ... (keep all your existing endpoints)
-
 @app.post("/jobs/", response_model=schemas.Job)
 def create_job_endpoint(
     job: schemas.JobCreate,
+    # Add background_tasks as a parameter. FastAPI will inject it.
+    background_tasks: BackgroundTasks, 
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
-    """
-    Create a new job posting.
-    Only users with the 'employer' role can create jobs.
-    """
-    print(f"Attempting to post job. User: '{current_user.name}', Role: '{current_user.role}'")
     if current_user.role != 'employer':
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only employers can post jobs"
         )
     
-    return crud.create_job(db=db, job=job, employer_id=current_user.id)
+    # Create the job as before
+    db_job = crud.create_job(db=db, job=job, employer_id=current_user.id)
+    
+    # Add our new function to the background tasks
+    background_tasks.add_task(run_job_matching_and_notifications, db=db, job=db_job)
+    
+    return db_job
 
 
 # ... (keep all your existing endpoints)
@@ -147,3 +166,80 @@ def chat_with_agent(request: ChatRequest):
         return {"response": response['output']}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+def run_job_matching_and_notifications(db: Session, job: models.Job):
+    print(f"Starting background task for job '{job.title}' (ID: {job.id})")
+    matching_seekers = crud.get_matching_seekers(db=db, job=job)
+    
+    print(f"Found {len(matching_seekers)} matching seekers.")
+    for seeker in matching_seekers:
+        notifications.send_job_notification(
+            user_name=seeker.name,
+            phone_number=seeker.phone_number,
+            job_title=job.title
+        )
+    print(f"Finished background task for job ID: {job.id}")
+
+# ... (at the end of the file)
+
+@app.get("/jobs/my-postings/", response_model=List[schemas.JobWithMatches])
+def read_my_postings(
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Retrieve all jobs posted by the currently logged-in employer,
+    along with a count of matching seekers for each job.
+    """
+    if current_user.role != 'employer':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only employers can view their job postings."
+        )
+    
+    jobs = crud.get_jobs_by_owner(db, owner_id=current_user.id)
+    jobs_with_counts = []
+    
+    for job in jobs:
+        matching_seekers = crud.get_matching_seekers(db, job=job)
+        job_data = schemas.Job.from_orm(job) # Convert SQLAlchemy object to Pydantic model
+        
+        job_with_count_data = schemas.JobWithMatches(
+            **job_data.dict(),
+            matching_seekers_count=len(matching_seekers)
+        )
+        jobs_with_counts.append(job_with_count_data)
+        
+    return jobs_with_counts
+
+# ... (at the end of the file)
+
+@app.get("/jobs/my-postings/", response_model=List[schemas.JobWithMatches])
+def read_my_postings(
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Retrieve all jobs posted by the currently logged-in employer,
+    along with a count of matching seekers for each job.
+    """
+    if current_user.role != 'employer':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only employers can view their job postings."
+        )
+    
+    jobs = crud.get_jobs_by_owner(db, owner_id=current_user.id)
+    jobs_with_counts = []
+    
+    for job in jobs:
+        matching_seekers = crud.get_matching_seekers(db, job=job)
+        job_data = schemas.Job.from_orm(job) # Convert SQLAlchemy object to Pydantic model
+        
+        job_with_count_data = schemas.JobWithMatches(
+            **job_data.dict(),
+            matching_seekers_count=len(matching_seekers)
+        )
+        jobs_with_counts.append(job_with_count_data)
+        
+    return jobs_with_counts

@@ -80,3 +80,31 @@ def create_job(db: Session, job: schemas.JobCreate, employer_id: int):
 
 def get_jobs(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Job).offset(skip).limit(limit).all()
+
+# ... (at the end of the file)
+
+def get_matching_seekers(db: Session, job: models.Job):
+    """
+    Finds all 'seeker' users who have at least one of the skills required by a job.
+    """
+    required_skill_ids = {skill.id for skill in job.required_skills}
+    
+    if not required_skill_ids:
+        return []
+
+    # Find users who are 'seekers' and whose skills overlap with the job's required skills.
+    matching_users = (
+        db.query(models.User)
+        .filter(models.User.role == 'seeker')
+        .join(models.User.skills)
+        .filter(models.Skill.id.in_(required_skill_ids))
+        .distinct()
+        .all()
+    )
+    
+    return matching_users
+
+# ... (at the end of the file)
+
+def get_jobs_by_owner(db: Session, owner_id: int):
+    return db.query(models.Job).filter(models.Job.owner_id == owner_id).all()

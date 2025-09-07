@@ -63,3 +63,8 @@ class TokenData(BaseModel):
 
 class UserSkillsUpdate(BaseModel):
     skill_ids: List[int]
+
+# ... (at the end of the file)
+
+class JobWithMatches(Job):
+    matching_seekers_count: int
