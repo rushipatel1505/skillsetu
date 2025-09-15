@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from . import chatbot
 from . import notifications
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import joinedload
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -138,16 +139,34 @@ def create_job_endpoint(
     
     return db_job
 
-
-# ... (keep all your existing endpoints)
-
-@app.get("/jobs/", response_model=List[schemas.Job])
+@app.get("/jobs/")
 def read_jobs(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db)):
-    """
-    Retrieve a list of all job postings.
-    """
-    jobs = crud.get_jobs(db, skip=skip, limit=limit)
-    return jobs
+    # Load related user in a single query if relationship exists (assumes Job.employer or Job.owner)
+    try:
+        # try `employer` relationship first, else `owner`
+        jobs = db.query(models.Job).options(joinedload(models.Job.employer)).offset(skip).limit(limit).all()
+        # if joinedload fails (attribute doesn't exist), try owner:
+    except Exception:
+        jobs = db.query(models.Job).options(joinedload(models.Job.owner)).offset(skip).limit(limit).all()
+
+    results = []
+    for job in jobs:
+        # prefer job.employer.name or job.owner.name if available
+        employer_name = None
+        try:
+            if getattr(job, "employer", None):
+                employer_name = getattr(job.employer, "name", None)
+            elif getattr(job, "owner", None):
+                employer_name = getattr(job.owner, "name", None)
+        except Exception:
+            employer_name = None
+
+        job_data = schemas.Job.from_orm(job).dict()
+        job_data["employer_name"] = employer_name
+        results.append(job_data)
+
+    return results
+
 
 
 # ... (keep all your existing code)

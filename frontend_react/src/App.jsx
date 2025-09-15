@@ -1,28 +1,65 @@
-import React from 'react';
-import { Routes, Route, Link } from 'react-router-dom';
-import HomePage from './pages/HomePage';
-import LoginPage from './pages/LoginPage';
-import SignupPage from './pages/SignupPage';
-import ProfilePage from './pages/ProfilePage'; 
-function App() {
-  return (
-    <div>
-      {/* --- Navigation Bar --- */}
-      <nav style={{ padding: '1rem', background: '#eee', marginBottom: '1rem' }}>
-        <Link to="/" style={{ marginRight: '1rem' }}>Home</Link>
-        <Link to="/login" style={{ marginRight: '1rem' }}>Login</Link>
-        <Link to="/signup">Signup</Link>
-      </nav>
+// src/App.jsx
+import { Routes, Route } from "react-router-dom";
+import SignupPage from "./pages/SignupPage";
+import LoginPage from "./pages/LoginPage";
+import ProtectedRoute from "./components/ProtectedRoute";
+import HomePage from "./pages/HomePage";
+import LandingPage from "./pages/LandingPage";
+import ProfilePage from "./pages/ProfilePage";
+import PostJobPage from "./pages/PostJobPage";
+import JobsPage from "./pages/JobsPage";         // <-- ADD THIS
+import NavBar from "./components/NavBar";
 
-      {/* --- Route Definitions --- */}
+const App = () => {
+  return (
+    <>
+      <NavBar />
       <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<LoginPage />} />
+        {/* Public landing page */}
+        <Route path="/" element={<LandingPage />} />
+
+        {/* Signup & Login */}
         <Route path="/signup" element={<SignupPage />} />
-        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/login" element={<LoginPage />} />
+
+        {/* Protected routes */}
+        <Route
+          path="/home"
+          element={
+            <ProtectedRoute>
+              <HomePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <ProfilePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/post-job"
+          element={
+            <ProtectedRoute>
+              <PostJobPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Jobs (browse) */}
+        <Route
+          path="/jobs"
+          element={
+            <ProtectedRoute>
+              <JobsPage />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
-    </div>
+    </>
   );
-}
+};
 
 export default App;
